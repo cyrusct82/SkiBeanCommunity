@@ -18,6 +18,7 @@
  ***************************************************/
 
 #include <Arduino.h>
+#include <SPI.h>   // needed here so PlatformIO LDF links SPI for lib/SkiET.h
 #include <PID_v1.h>
 #include "../lib/SkiET.h"
 #include "../lib/SkiDrum.h"
