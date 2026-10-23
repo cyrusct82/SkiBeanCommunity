@@ -19,6 +19,8 @@
 
 #include <Arduino.h>
 #include <PID_v1.h>
+#include "../lib/SkiET.h"
+#include "../lib/SkiDrum.h"
 #include "../lib/SkiBLE.h"
 #include "../lib/SkiLED.h"
 #include "../lib/SkiCMD.h"
@@ -43,6 +45,10 @@ char CorF = 'C';            // default units
 // -----------------------------------------------------------------------------
 SkyRoasterParser roaster;
 
+// External ET probe (MAX6675) and drum motor PWM (D4184)
+SkiET et;
+SkiDrum drum;
+
 // -----------------------------------------------------------------------------
 // Track BLE writes from HiBean
 // -----------------------------------------------------------------------------
@@ -64,6 +70,9 @@ void setup() {
     Serial.begin(115200);
     ESP_LOGI("setup", "Starting HiBean ESP32 BLE Roaster Control.");
     delay(3000); //let fw upload finish before we take over hwcdc serial tx/rx
+
+    et.begin();
+    drum.begin();
 
     // set pinmode on tx for commands to roaster, take it high
     pinMode(TX_PIN, OUTPUT);
@@ -90,6 +99,9 @@ void setup() {
 }
 
 void loop() {
+    et.update();
+    drum.update();
+
     // roaster shut down, clear our buffers   
     if (itsbeentoolong()) { shutdown(); }
 
