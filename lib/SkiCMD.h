@@ -14,6 +14,8 @@
  */
 
 #include "PID_v1.h"
+#include "SkiET.h"
+#include "SkiDrum.h"
 // -----------------------------------------------------------------------------
 // All HiBean commands TO roaster
 // -----------------------------------------------------------------------------
@@ -27,6 +29,11 @@ extern PID myPID;
 extern PIDConfig myPIDConfig;
 extern double pInput, pOutput, pSetpoint;
 extern int manualHeatLevel;
+extern SkiET et;       // MAX6675 ET probe
+extern SkiDrum drum;   // D4184 drum PWM
+
+int  drumSpeedPct = 100;   // speed used when DRUM;1 is received
+bool drumOn = false;
 
 // -----------------------------------------------------------------------------
 // Timing Constants
@@ -64,6 +71,7 @@ const String CMD_HEAT         = "OT1";
 const String CMD_VENT         = "OT2";
 const String CMD_OFF          = "OFF";
 const String CMD_DRUM         = "DRUM";
+const String CMD_DRUMSPD      = "DRUMSPD";
 const String CMD_FILTER       = "FILTER";
 const String CMD_COOL         = "COOL";
 const String CMD_CHAN         = "CHAN";
@@ -78,6 +86,7 @@ void handleREAD();
 void handleHEAT(uint8_t value);
 void handleVENT(uint8_t value);
 void handleDRUM(uint8_t value);
+void handleDRUMSPD(uint8_t value);
 void handleFILTER(uint8_t value);
 void handleCOOL(uint8_t value);
 void eStop();
@@ -103,6 +112,8 @@ void shutdown() {
         sendBuffer[i] = 0;
     }
     sendBuffer[CHECK_BYTE] = 0; // Reset checksum
+    drumOn = false;
+    drum.stop();                // stop external drum motor too
 }
 
 // -----------------------------------------------------------------------------
@@ -124,7 +135,11 @@ void handleOT1(uint8_t value) {
 }
 
 void handleREAD() {
-    String readMsg = "0," + String(temp, 1) + "," + String(temp, 1) + "," +
+    String etStr = et.valid() ? String(et.get(CorF), 1) : String("-1.0");
+    String btStr = String(temp, 1);
+    String ch1 = (ET_CHANNEL == 1) ? etStr : btStr;
+    String ch2 = (ET_CHANNEL == 1) ? btStr : etStr;
+    String readMsg = "0," + ch1 + "," + ch2 + "," +
           String(sendBuffer[HEAT_BYTE]) + "," +
           String(sendBuffer[VENT_BYTE]) + "\n";
     //D_print("READ Output: ");
@@ -157,13 +172,23 @@ void handleVENT(uint8_t value) {
 }
 
 void handleDRUM(uint8_t value) {
-    if (value != 0) {
-        setValue(&sendBuffer[DRUM_BYTE], 100);
-    } else {
-        setValue(&sendBuffer[DRUM_BYTE], 0);
-    }
+    // DRUM;0   = off
+    // DRUM;1   = on at the last used speed (default 100 %), HiBean/TC4 on-off style
+    // DRUM;2..100 = on at that speed in % (HiBean speed slider)
+    if (value > 100) value = 100;
+    if (value >= 2) drumSpeedPct = value;
+    drumOn = (value != 0);
+    drum.setSpeed(drumOn ? drumSpeedPct : 0);
+    // keep telling the roaster board the drum is on (interlock), motor itself is driven by D4184
+    setValue(&sendBuffer[DRUM_BYTE], drumOn ? 100 : 0);
     sendRoasterMessage();
     lastEventTime = micros();
+}
+
+void handleDRUMSPD(uint8_t value) {
+    // DRUMSPD;XX = drum speed 1-100 %
+    drumSpeedPct = constrain((int)value, 1, 100);
+    if (drumOn) drum.setSpeed(drumSpeedPct);
 }
 
 void handleFILTER(uint8_t value) {
@@ -292,6 +317,9 @@ void parseAndExecuteCommands(String input) {
         shutdown();  // Shut down system
     } else if (command == "ESTOP") {  
         eStop();  // Emergency stop (heater = 0, vent = 100)
+    } else if (command == "DRUMSPD") {
+        ESP_LOGI("SkiCMD", "Setting Drum speed: %i", param.toInt());
+        handleDRUMSPD(param.toInt());
     } else if (command == "DRUM") {  
         ESP_LOGI("SkiCMD", "Setting Drum: %i", param.toInt()); 
         handleDRUM(param.toInt());  // Start/stop the drum
