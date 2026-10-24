@@ -10,7 +10,7 @@
 #define ET_CS_PIN  10
 // Which TC4 channel carries ET in the READ reply: 1 or 2.
 // Reference firmware sends roaster probe on channel 1 and MAX6675 on channel 2.
-#define ET_CHANNEL 2
+#define ET_CHANNEL 1
 #define ET_READ_INTERVAL_MS 300   // MAX6675 conversion takes ~220 ms
 
 class SkiET {
